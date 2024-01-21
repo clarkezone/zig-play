@@ -1,6 +1,7 @@
-Naive version
-Open file using regular file IO and print first 3 lines
-Parse values and print
+## Naive version
+[ ] Create empty 
+[ ] Open file using regular file IO and print first 3 lines
+[ ] Parse values and print
 
 Optimized version
 Open file using memory mapped file
