@@ -132,10 +132,10 @@ def build_test_data(weather_station_names, num_rows_to_create):
     
     end_time = time.time()
     elapsed_time = end_time - start_time
-    file_size = os.path.getsize("../../../data/measurements.txt")
+    file_size = os.path.getsize("measurements.txt")
     human_file_size = convert_bytes(file_size)
  
-    print("Test data successfully written to 1brc/data/measurements.txt")
+    print("Test data successfully written to measurements.txt")
     print(f"Actual file size:  {human_file_size}")
     print(f"Elapsed time: {format_elapsed_time(elapsed_time)}")
 
