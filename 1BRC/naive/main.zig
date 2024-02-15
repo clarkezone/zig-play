@@ -7,6 +7,6 @@ pub fn main() !void {
     const reader = std.fs.File.reader(sourceFile);
     var buf: [1024]u8 = undefined;
     while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        std.debug.print("Hello {s} {s}\n", .{ line, buf });
+        std.debug.print("Hello {s}\n", .{ line});
     }
 }
