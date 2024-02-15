@@ -31,7 +31,7 @@ pub fn printallstream(filename: []const u8) !void {
     while (true) {
         strem.reset();
         reader.streamUntilDelimiter(strem.writer(), '\n', null) catch return;
-        std.debug.print("{s}\n", .{buf4[0..try strem.getPos()]});
+        std.debug.print("{s}\n", .{strem.getWritten()});
     }
     std.debug.print("done\n", .{});
 
