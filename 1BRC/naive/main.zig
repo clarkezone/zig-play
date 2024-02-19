@@ -1,5 +1,40 @@
 const std = @import("std");
 
+const StationAgregate = struct {
+    name: []const u8,
+    valuecount: u32, //unclear if this will overflow based on number of readings
+    temperaturetotal: f64, //unclear if this will overflow based on number of readings.  For multithreaded case, 31M rows * max temp would need to be stored asuming split over 32 cores
+
+    pub fn init(name: []const u8) StationAgregate {
+        return StationAgregate{
+            .name = name,
+            .valuecount = 0,
+            .temperaturetotal = 0,
+        };
+    }
+
+    pub fn averageTemperature(self: StationAgregate) f64 {
+        if (self.valuecount == 0) {
+            return 0.0;
+        }
+        return self.temperaturetotal / @as(f32, @floatFromInt(self.valuecount));
+    }
+
+    pub fn recordTemperature(self: *StationAgregate, value: f64) void {
+        self.*.temperaturetotal += value;
+        self.*.valuecount += 1;
+    }
+};
+
+test "StationAgregate" {
+    var station = StationAgregate.init("test");
+    try std.testing.expect(station.averageTemperature() == 0.0);
+    station.recordTemperature(10.0);
+    try std.testing.expect(station.averageTemperature() == 10.0);
+    station.recordTemperature(20.0);
+    try std.testing.expect(station.averageTemperature() == 15.0);
+}
+
 pub fn main() !void {
     const path = "../data/weather_stations.csv";
     try printallstream(path);
