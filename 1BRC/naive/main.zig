@@ -35,6 +35,24 @@ test "StationAgregate" {
     try std.testing.expect(station.averageTemperature() == 15.0);
 }
 
+test "hashmap stationagregate" {
+    var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
+    defer tracker.deinit();
+    var thing = try tracker.getOrPut("ssss");
+    if (thing.found_existing) {
+        std.debug.print("\nFound\n", .{});
+    } else {
+        thing.value_ptr.* = StationAgregate.init("sssname");
+        std.debug.print("\nNot Found\n", .{});
+    }
+    var thing2 = try tracker.getOrPut("ssss");
+    if (thing2.found_existing) {
+        std.debug.print("Found with data {s}\n", .{thing.value_ptr.*.name});
+    } else {
+        std.debug.print("Not Found\n", .{});
+    }
+}
+
 pub fn main() !void {
     const path = "../data/weather_stations.csv";
     try printallstream(path);
@@ -83,6 +101,7 @@ pub fn printallstream(filename: []const u8) !void {
         var buf = strem.getWritten();
         parseLine(buf) catch |e| {
             std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
+            return;
         };
     }
     std.debug.print("done\n", .{});
