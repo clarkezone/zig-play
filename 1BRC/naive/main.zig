@@ -50,6 +50,20 @@ pub fn printall(filename: []const u8) !void {
     }
 }
 
+pub fn parseLine(buff: []const u8) !void {
+    var splitindex: usize = 0;
+    for (buff, 0..) |b, i| {
+        if (b == ';') {
+            splitindex = i;
+            break;
+        }
+    }
+    var stationName = buff[0..splitindex];
+    var tempStr = buff[splitindex + 1 ..];
+    var temp = try std.fmt.parseFloat(f32, tempStr);
+    std.debug.print("station:{s} tempstr:{}\n", .{ stationName, temp });
+}
+
 pub fn printallstream(filename: []const u8) !void {
     //@memset(&buf, 0);
     //var buf2: [1024]u8 = std.mem.zeroes([1024]u8);
@@ -66,7 +80,10 @@ pub fn printallstream(filename: []const u8) !void {
     while (true) {
         strem.reset();
         reader.streamUntilDelimiter(strem.writer(), '\n', null) catch return;
-        std.debug.print("{s}\n", .{strem.getWritten()});
+        var buf = strem.getWritten();
+        parseLine(buf) catch |e| {
+            std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
+        };
     }
     std.debug.print("done\n", .{});
 
