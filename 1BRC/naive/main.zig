@@ -35,6 +35,37 @@ test "StationAgregate" {
     try std.testing.expect(station.averageTemperature() == 15.0);
 }
 
+const Stations = struct {
+    stations: std.StringHashMap(StationAgregate),
+
+    pub fn init() Stations {
+        var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
+        var st = Stations{ .stations = tracker };
+        return st;
+    }
+
+    pub fn deinit(self: *Stations) void {
+        self.stations.deinit();
+    }
+
+    pub fn Store(self: *Stations, name: []const u8, temp: f32) !void {
+        var thing = try self.stations.getOrPut(name);
+        if (!thing.found_existing) {
+            thing.value_ptr.* = StationAgregate.init("sssname");
+        }
+        thing.value_ptr.*.recordTemperature(temp);
+    }
+};
+
+test "hashmap stations" {
+    var stats = Stations.init();
+    defer stats.deinit();
+    try stats.Store("foo", 32);
+    try stats.Store("foo", 10);
+    try stats.Store("bar", 15);
+    // TODO confirm one entry and value
+}
+
 test "hashmap stationagregate" {
     var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
     defer tracker.deinit();
