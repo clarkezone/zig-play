@@ -38,8 +38,8 @@ test "StationAgregate" {
 const Stations = struct {
     stations: std.StringHashMap(StationAgregate),
 
-    pub fn init() Stations {
-        var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
+    pub fn init(ally: std.mem.Allocator) Stations {
+        var tracker = std.StringHashMap(StationAgregate).init(ally);
         var st = Stations{ .stations = tracker };
         return st;
     }
@@ -58,7 +58,7 @@ const Stations = struct {
 };
 
 test "hashmap stations" {
-    var stats = Stations.init();
+    var stats = Stations.init(std.testing.allocator);
     defer stats.deinit();
     try stats.Store("foo", 32);
     try stats.Store("foo", 10);
@@ -102,7 +102,7 @@ pub fn printall(filename: []const u8) !void {
     }
 }
 
-pub fn parseLine(buff: []const u8) !void {
+pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
     var splitindex: usize = 0;
     for (buff, 0..) |b, i| {
         if (b == ';') {
@@ -113,7 +113,17 @@ pub fn parseLine(buff: []const u8) !void {
     var stationName = buff[0..splitindex];
     var tempStr = buff[splitindex + 1 ..];
     var temp = try std.fmt.parseFloat(f32, tempStr);
-    std.debug.print("station:{s} tempstr:{}\n", .{ stationName, temp });
+    return .{ .name = stationName, .value = temp };
+}
+
+test "parseLine" {
+    //# Adapted from https://simplemaps.com/data/world-cities
+    //# Licensed under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/)
+
+    const line = "foobar;2.444";
+    var parsed = try parseLine(line);
+    try std.testing.expect(std.mem.eql(u8, parsed.name, "foobar"));
+    try std.testing.expect(parsed.value == 2.444);
 }
 
 pub fn printallstream(filename: []const u8) !void {
@@ -123,6 +133,12 @@ pub fn printallstream(filename: []const u8) !void {
     //var buf3: [1024]u8 = [1]u8{0} ** 1024;
     //_ = buf3;
     //
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var stats = Stations.init(allocator);
+    defer stats.deinit();
+
     const sourceFile = try std.fs.cwd().openFile(filename, .{});
     defer sourceFile.close();
     const reader = std.fs.File.reader(sourceFile);
@@ -133,10 +149,14 @@ pub fn printallstream(filename: []const u8) !void {
         strem.reset();
         reader.streamUntilDelimiter(strem.writer(), '\n', null) catch return;
         var buf = strem.getWritten();
-        parseLine(buf) catch |e| {
-            std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
-            return;
-        };
+        if (buf[0] != '#') {
+            const vals = parseLine(buf) catch |e| {
+                std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
+                return;
+            };
+            std.debug.print("name: {s}, value: {}\n", .{ vals.name, vals.value });
+            try stats.Store(vals.name, vals.value);
+        }
     }
     std.debug.print("done\n", .{});
 
