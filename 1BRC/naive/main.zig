@@ -38,14 +38,17 @@ test "StationAgregate" {
 test "hashmap stationagregate" {
     var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
     defer tracker.deinit();
-    var thing = try tracker.getOrPut("ssss");
+    const testkey = "ssss";
+    var thing = try tracker.getOrPut(testkey);
+    try std.testing.expect(!thing.found_existing);
     if (thing.found_existing) {
         std.debug.print("\nFound\n", .{});
     } else {
         thing.value_ptr.* = StationAgregate.init("sssname");
         std.debug.print("\nNot Found\n", .{});
     }
-    var thing2 = try tracker.getOrPut("ssss");
+    var thing2 = try tracker.getOrPut(testkey);
+    try std.testing.expect(thing2.found_existing);
     if (thing2.found_existing) {
         std.debug.print("Found with data {s}\n", .{thing.value_ptr.*.name});
     } else {
