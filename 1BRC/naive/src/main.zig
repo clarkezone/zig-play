@@ -1,16 +1,22 @@
 const std = @import("std");
 
 const StationAgregate = struct {
+    ally: std.mem.Allocator,
     name: []const u8,
     valuecount: u32, //unclear if this will overflow based on number of readings
     temperaturetotal: f64, //unclear if this will overflow based on number of readings.  For multithreaded case, 31M rows * max temp would need to be stored asuming split over 32 cores
 
-    pub fn init(name: []const u8) StationAgregate {
+    pub fn init(ally: std.mem.Allocator, name: []const u8) !StationAgregate {
         return StationAgregate{
-            .name = name,
+            .ally = ally,
+            .name = try ally.dupe(u8, name),
             .valuecount = 0,
             .temperaturetotal = 0,
         };
+    }
+
+    pub fn deinit(self: *StationAgregate) void {
+        self.ally.free(self.name);
     }
 
     pub fn averageTemperature(self: StationAgregate) f64 {
@@ -27,33 +33,52 @@ const StationAgregate = struct {
 };
 
 test "StationAgregate" {
-    var station = StationAgregate.init("test");
+    var ally = std.testing.allocator;
+    var station = try StationAgregate.init(ally, "test");
     try std.testing.expect(station.averageTemperature() == 0.0);
     station.recordTemperature(10.0);
     try std.testing.expect(station.averageTemperature() == 10.0);
     station.recordTemperature(20.0);
     try std.testing.expect(station.averageTemperature() == 15.0);
+    station.deinit();
 }
 
 const Stations = struct {
+    ally: std.mem.Allocator,
     stations: std.StringHashMap(StationAgregate),
 
     pub fn init(ally: std.mem.Allocator) Stations {
         var tracker = std.StringHashMap(StationAgregate).init(ally);
-        var st = Stations{ .stations = tracker };
+        var st = Stations{ .ally = ally, .stations = tracker };
         return st;
     }
 
     pub fn deinit(self: *Stations) void {
+        var it = self.stations.iterator();
+        while (it.next()) |th| {
+            self.ally.free(th.value_ptr.*.name);
+        }
         self.stations.deinit();
     }
 
     pub fn Store(self: *Stations, name: []const u8, temp: f32) !void {
         var thing = try self.stations.getOrPut(name);
         if (!thing.found_existing) {
-            thing.value_ptr.* = StationAgregate.init("sssname");
+            thing.value_ptr.* = try StationAgregate.init(self.ally, name);
+            thing.key_ptr.* = thing.value_ptr.*.name;
         }
         thing.value_ptr.*.recordTemperature(temp);
+    }
+
+    pub fn PrintSummary(self: *Stations) void {
+        std.debug.print("Storagecount {}\n", .{self.stations.count()});
+    }
+
+    pub fn PrintAll(self: *Stations) void {
+        var it = self.stations.iterator();
+        while (it.next()) |t| {
+            std.debug.print("Place: {s}\n", .{t.value_ptr.*.name});
+        }
     }
 };
 
@@ -88,7 +113,7 @@ test "hashmap stationagregate" {
 }
 
 pub fn main() !void {
-    const path = "../data/weather_stations.csv";
+    const path = "../../data/weather_stations.csv";
     try printallstream(path);
 }
 
@@ -145,19 +170,23 @@ pub fn printallstream(filename: []const u8) !void {
     var buf4: [1024]u8 = undefined;
     var strem = std.io.fixedBufferStream(&buf4);
 
+    var rowcount: u16 = 0;
     while (true) {
         strem.reset();
-        reader.streamUntilDelimiter(strem.writer(), '\n', null) catch return;
+        reader.streamUntilDelimiter(strem.writer(), '\n', null) catch break;
         var buf = strem.getWritten();
         if (buf[0] != '#') {
+            rowcount += 1;
             const vals = parseLine(buf) catch |e| {
                 std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
                 return;
             };
-            std.debug.print("name: {s}, value: {}\n", .{ vals.name, vals.value });
+            //std.debug.print("name: {s}, value: {}\n", .{ vals.name, vals.value });
             try stats.Store(vals.name, vals.value);
         }
     }
+    std.debug.print("{} rows scanned from file.\n", .{rowcount});
+    stats.PrintSummary();
     std.debug.print("done\n", .{});
 
     ////    const input_string = "some_string_with_delimiter!";
