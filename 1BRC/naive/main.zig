@@ -63,7 +63,7 @@ test "hashmap stations" {
     try stats.Store("foo", 32);
     try stats.Store("foo", 10);
     try stats.Store("bar", 15);
-    // TODO confirm one entry and value
+    // TODO confirm two entries and value
 }
 
 test "hashmap stationagregate" {
