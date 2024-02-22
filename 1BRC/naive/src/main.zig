@@ -158,6 +158,8 @@ pub fn printallstream(filename: []const u8) !void {
     //var buf3: [1024]u8 = [1]u8{0} ** 1024;
     //_ = buf3;
     //
+    var timer = try std.time.Timer.start();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
@@ -185,7 +187,10 @@ pub fn printallstream(filename: []const u8) !void {
             try stats.Store(vals.name, vals.value);
         }
     }
-    std.debug.print("{} rows scanned from file.\n", .{rowcount});
+    const elapsed: f32 = @floatFromInt(timer.read());
+    const elapsedSecs = elapsed / 10e8;
+
+    std.debug.print("{} rows scanned from file in {} secs.\n", .{ rowcount, elapsedSecs });
     stats.PrintSummary();
     std.debug.print("done\n", .{});
 
