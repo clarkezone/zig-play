@@ -5,6 +5,8 @@ const StationAgregate = struct {
     name: []const u8,
     valuecount: u32, //unclear if this will overflow based on number of readings
     temperaturetotal: f64, //unclear if this will overflow based on number of readings.  For multithreaded case, 31M rows * max temp would need to be stored asuming split over 32 cores
+    temperaturemin: f64,
+    temperaturemax: f64,
 
     pub fn init(ally: std.mem.Allocator, name: []const u8) !StationAgregate {
         return StationAgregate{
@@ -12,6 +14,8 @@ const StationAgregate = struct {
             .name = try ally.dupe(u8, name),
             .valuecount = 0,
             .temperaturetotal = 0,
+            .temperaturemin = 0,
+            .temperaturemax = 0,
         };
     }
 
@@ -28,6 +32,12 @@ const StationAgregate = struct {
 
     pub fn recordTemperature(self: *StationAgregate, value: f64) void {
         self.*.temperaturetotal += value;
+        if (value < self.*.temperaturemin) {
+            self.*.temperaturemin = value;
+        }
+        if (value > self.temperaturemax) {
+            self.*.temperaturemax = value;
+        }
         self.*.valuecount += 1;
     }
 };
@@ -76,9 +86,11 @@ const Stations = struct {
 
     pub fn PrintAll(self: *Stations) void {
         var it = self.stations.iterator();
+        std.debug.print("{{", .{});
         while (it.next()) |t| {
-            std.debug.print("Place: {s}\n", .{t.value_ptr.*.name});
+            std.debug.print("{s}={d:.1}/{d:.1}/{d:.1}, ", .{ t.value_ptr.*.name, t.value_ptr.*.temperaturemin, t.value_ptr.*.temperaturemax, t.value_ptr.*.averageTemperature() });
         }
+        std.debug.print("}}\n", .{});
     }
 };
 
@@ -113,7 +125,7 @@ test "hashmap stationagregate" {
 }
 
 pub fn main() !void {
-    const path = "../../data/weather_stations.csv";
+    const path = "../../data/measurements_10k.txt";
     try printallstream(path);
 }
 
@@ -190,8 +202,8 @@ pub fn printallstream(filename: []const u8) !void {
     const elapsed: f32 = @floatFromInt(timer.read());
     const elapsedSecs = elapsed / 10e8;
 
+    stats.PrintAll();
     std.debug.print("{} rows scanned from file in {} secs.\n", .{ rowcount, elapsedSecs });
-    stats.PrintSummary();
     std.debug.print("done\n", .{});
 
     ////    const input_string = "some_string_with_delimiter!";
