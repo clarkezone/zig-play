@@ -32,10 +32,15 @@ const StationAgregate = struct {
 
     pub fn recordTemperature(self: *StationAgregate, value: f64) void {
         self.*.temperaturetotal += value;
-        if (value < self.*.temperaturemin) {
+        if (self.*.temperaturemin == 0) {
             self.*.temperaturemin = value;
         }
-        if (value > self.temperaturemax) {
+        if (self.*.temperaturemax == 0) {
+            self.*.temperaturemax = value;
+        }
+        if (value < self.*.temperaturemin) {
+            self.*.temperaturemin = value;
+        } else if (value > self.*.temperaturemax) {
             self.*.temperaturemax = value;
         }
         self.*.valuecount += 1;
@@ -55,10 +60,15 @@ test "StationAgregate" {
 
 const Stations = struct {
     ally: std.mem.Allocator,
-    stations: std.StringHashMap(StationAgregate),
+    stations: std.StringArrayHashMap(StationAgregate),
 
+    //TODO error return causes deinit not to be found
     pub fn init(ally: std.mem.Allocator) Stations {
-        var tracker = std.StringHashMap(StationAgregate).init(ally);
+        var tracker = std.StringArrayHashMap(StationAgregate).init(ally);
+        // no perf improvement:
+        tracker.ensureTotalCapacity(10000) catch {
+            unreachable;
+        };
         var st = Stations{ .ally = ally, .stations = tracker };
         return st;
     }
@@ -84,13 +94,35 @@ const Stations = struct {
         std.debug.print("Storagecount {}\n", .{self.stations.count()});
     }
 
-    pub fn PrintAll(self: *Stations) void {
-        var it = self.stations.iterator();
-        std.debug.print("{{", .{});
-        while (it.next()) |t| {
-            std.debug.print("{s}={d:.1}/{d:.1}/{d:.1}, ", .{ t.value_ptr.*.name, t.value_ptr.*.temperaturemin, t.value_ptr.*.temperaturemax, t.value_ptr.*.averageTemperature() });
+    fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
+        return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
+    }
+
+    pub fn PrintAll(self: *Stations) !void {
+        const out = std.io.getStdOut().writer();
+        //var it = self.stations.iterator();
+        const stationlist = std.ArrayList([]const u8);
+        var list = stationlist.init(self.ally);
+        defer list.deinit();
+        try list.appendSlice(self.stations.keys());
+        var rawlist = try list.toOwnedSlice();
+        std.sort.insertion([]const u8, rawlist, {}, compareStrings);
+        //doesn't work
+        //self.stations.sort(lessthan);
+        try out.print("{{", .{});
+        std.debug.print("sorted: ", .{});
+        for (rawlist) |li| {
+            const result = self.stations.get(li);
+            if (result) |ri| {
+                try out.print("{s}={d:.1}/{d:.1}/{d:.1}, ", .{
+                    ri.name,
+                    ri.temperaturemin,
+                    ri.averageTemperature(),
+                    ri.temperaturemax,
+                });
+            }
         }
-        std.debug.print("}}\n", .{});
+        try out.print("}}\n", .{});
     }
 };
 
@@ -125,7 +157,9 @@ test "hashmap stationagregate" {
 }
 
 pub fn main() !void {
-    const path = "../../data/measurements_10k.txt";
+    //const path = "../../data/measurements_1B.txt";
+    //const path = "../../data/measurements_1M.txt";
+    const path = "../../data/measurements_5k.txt";
     try printallstream(path);
 }
 
@@ -184,7 +218,7 @@ pub fn printallstream(filename: []const u8) !void {
     var buf4: [1024]u8 = undefined;
     var strem = std.io.fixedBufferStream(&buf4);
 
-    var rowcount: u16 = 0;
+    var rowcount: u64 = 0;
     while (true) {
         strem.reset();
         reader.streamUntilDelimiter(strem.writer(), '\n', null) catch break;
@@ -200,10 +234,10 @@ pub fn printallstream(filename: []const u8) !void {
         }
     }
     const elapsed: f32 = @floatFromInt(timer.read());
-    const elapsedSecs = elapsed / 10e8;
+    const elapsedSecs = elapsed / 1e9;
 
-    stats.PrintAll();
-    std.debug.print("{} rows scanned from file in {} secs.\n", .{ rowcount, elapsedSecs });
+    try stats.PrintAll();
+    std.debug.print("{} rows scanned from file in {d:.3} secs.\n", .{ rowcount, elapsedSecs });
     std.debug.print("done\n", .{});
 
     ////    const input_string = "some_string_with_delimiter!";
