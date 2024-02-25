@@ -48,7 +48,7 @@ const StationAgregate = struct {
 };
 
 test "StationAgregate" {
-    var ally = std.testing.allocator;
+    const ally = std.testing.allocator;
     var station = try StationAgregate.init(ally, "test");
     try std.testing.expect(station.averageTemperature() == 0.0);
     station.recordTemperature(10.0);
@@ -69,7 +69,7 @@ const Stations = struct {
         tracker.ensureTotalCapacity(10000) catch {
             unreachable;
         };
-        var st = Stations{ .ally = ally, .stations = tracker };
+        const st = Stations{ .ally = ally, .stations = tracker };
         return st;
     }
 
@@ -82,7 +82,7 @@ const Stations = struct {
     }
 
     pub fn Store(self: *Stations, name: []const u8, temp: f32) !void {
-        var thing = try self.stations.getOrPut(name);
+        const thing = try self.stations.getOrPut(name);
         if (!thing.found_existing) {
             thing.value_ptr.* = try StationAgregate.init(self.ally, name);
             thing.key_ptr.* = thing.value_ptr.*.name;
@@ -105,7 +105,7 @@ const Stations = struct {
         var list = stationlist.init(self.ally);
         defer list.deinit();
         try list.appendSlice(self.stations.keys());
-        var rawlist = try list.toOwnedSlice();
+        const rawlist = try list.toOwnedSlice();
         std.sort.insertion([]const u8, rawlist, {}, compareStrings);
         //doesn't work
         //self.stations.sort(lessthan);
@@ -139,7 +139,7 @@ test "hashmap stationagregate" {
     var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
     defer tracker.deinit();
     const testkey = "ssss";
-    var thing = try tracker.getOrPut(testkey);
+    const thing = try tracker.getOrPut(testkey);
     try std.testing.expect(!thing.found_existing);
     if (thing.found_existing) {
         std.debug.print("\nFound\n", .{});
@@ -147,7 +147,7 @@ test "hashmap stationagregate" {
         thing.value_ptr.* = StationAgregate.init("sssname");
         std.debug.print("\nNot Found\n", .{});
     }
-    var thing2 = try tracker.getOrPut(testkey);
+    const thing2 = try tracker.getOrPut(testkey);
     try std.testing.expect(thing2.found_existing);
     if (thing2.found_existing) {
         std.debug.print("Found with data {s}\n", .{thing.value_ptr.*.name});
@@ -181,9 +181,9 @@ pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
             break;
         }
     }
-    var stationName = buff[0..splitindex];
-    var tempStr = buff[splitindex + 1 ..];
-    var temp = try std.fmt.parseFloat(f32, tempStr);
+    const stationName = buff[0..splitindex];
+    const tempStr = buff[splitindex + 1 ..];
+    const temp = try std.fmt.parseFloat(f32, tempStr);
     return .{ .name = stationName, .value = temp };
 }
 
@@ -192,7 +192,7 @@ test "parseLine" {
     //# Licensed under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/)
 
     const line = "foobar;2.444";
-    var parsed = try parseLine(line);
+    const parsed = try parseLine(line);
     try std.testing.expect(std.mem.eql(u8, parsed.name, "foobar"));
     try std.testing.expect(parsed.value == 2.444);
 }
@@ -222,7 +222,7 @@ pub fn printallstream(filename: []const u8) !void {
     while (true) {
         strem.reset();
         reader.streamUntilDelimiter(strem.writer(), '\n', null) catch break;
-        var buf = strem.getWritten();
+        const buf = strem.getWritten();
         if (buf[0] != '#') {
             rowcount += 1;
             const vals = parseLine(buf) catch |e| {
