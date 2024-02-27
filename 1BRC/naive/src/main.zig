@@ -88,6 +88,8 @@ const Stations = struct {
         const thing = try self.stations.getOrPut(name);
         if (!thing.found_existing) {
             thing.value_ptr.* = try StationAgregate.init(self.ally, name);
+
+            //doesn't change hash but replaces storage from name passed in to name stored / allocated
             thing.key_ptr.* = thing.value_ptr.*.name;
         }
         thing.value_ptr.*.recordTemperature(temp);
@@ -209,6 +211,8 @@ pub fn getStatsFromFileStream(allocator: std.mem.Allocator, filename: []const u8
 
     while (true) {
         stream.reset();
+
+        // this is 4x slower than it should be: https://www.openmymind.net/Performance-of-reading-a-file-line-by-line-in-Zig/
         reader.streamUntilDelimiter(stream.writer(), '\n', null) catch break;
         const buf = stream.getWritten();
         if (parseLine(buf)) |vals| {
