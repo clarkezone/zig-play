@@ -104,9 +104,9 @@ const Stations = struct {
         return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
     }
 
-    pub fn GetStation(self: *Stations, name: []const u8) StationAgregate {
+    pub fn GetStation(self: *Stations, name: []const u8) ?StationAgregate {
         const result = self.stations.get(name);
-        return result.?;
+        return result;
     }
 
     pub fn PrintSpecific(self: *Stations, name: []const u8) !void {
@@ -115,12 +115,6 @@ const Stations = struct {
         const result = self.GetStation(name);
         if (result) |ri| {
             try out.print("{s}={d}/{d}/{d}\n", .{
-                ri.name,
-                ri.temperaturemin,
-                ri.averageTemperature(),
-                ri.temperaturemax,
-            });
-            try out.print("{s}={d:.1}/{s}/{d:.1}\n", .{
                 ri.name,
                 ri.temperaturemin,
                 ri.averageTemperature(),
@@ -137,6 +131,7 @@ const Stations = struct {
         defer list.deinit();
         try list.appendSlice(self.stations.keys());
         const rawlist = try list.toOwnedSlice();
+        defer self.ally.free(rawlist);
         std.sort.insertion([]const u8, rawlist, {}, compareStrings);
         //doesn't work
         //self.stations.sort(lessthan);
@@ -167,7 +162,7 @@ test "hashmap stations" {
     try std.testing.expect(stats.resultcount == 3);
 
     const foo = stats.GetStation("foo");
-    try std.testing.expect(foo.averageTemperature() == 21.0);
+    try std.testing.expect(foo.?.averageTemperature() == 21.0);
 }
 
 const passError = error{ DelimiterNotFound, LineIsComment };
@@ -233,13 +228,21 @@ test "getStatsFromFileStream" {
     const path = "../../data/weather_stations.csv";
     var stats = try getStatsFromFileStream(allocator, path);
     defer stats.deinit();
+
+    const firstname = "Zouar";
+    const foo = stats.GetStation(firstname);
+    try std.testing.expect(foo.?.averageTemperature() == 20.450000762939453);
+
+    const bar = stats.GetStation("Ćuprija");
+    try std.testing.expect(bar.?.averageTemperature() == 43.923099517822266);
 }
 
 pub fn main() !void {
     //const path = "../../data/measurements_1B.txt";
     //const path = "../../data/measurements_1M.txt";
     //const path = "../../data/measurements_5k.txt";
-    const path = "measurements_official.txt";
+    const path = "../../data/weather_stations.csv";
+    //const path = "measurements_official.txt";
     var timer = try std.time.Timer.start();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -247,8 +250,8 @@ pub fn main() !void {
     var stats = try getStatsFromFileStream(allocator, path);
     const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
 
-    try stats.PrintAll();
-    //    try stats.PrintSpecific("Farkhâna");
+    //try stats.PrintAll();
+    try stats.PrintSpecific("Ćuprija");
     std.debug.print("{} rows scanned from file in {d:.3} secs.\n", .{ stats.resultcount, elapsedSecs });
     std.debug.print("done\n", .{});
     stats.deinit();
