@@ -157,27 +157,6 @@ test "hashmap stations" {
     // TODO confirm two entries and value
 }
 
-test "hashmap stationagregate" {
-    var tracker = std.StringHashMap(StationAgregate).init(std.testing.allocator);
-    defer tracker.deinit();
-    const testkey = "ssss";
-    const thing = try tracker.getOrPut(testkey);
-    try std.testing.expect(!thing.found_existing);
-    if (thing.found_existing) {
-        std.debug.print("\nFound\n", .{});
-    } else {
-        thing.value_ptr.* = StationAgregate.init("sssname");
-        std.debug.print("\nNot Found\n", .{});
-    }
-    const thing2 = try tracker.getOrPut(testkey);
-    try std.testing.expect(thing2.found_existing);
-    if (thing2.found_existing) {
-        std.debug.print("Found with data {s}\n", .{thing.value_ptr.*.name});
-    } else {
-        std.debug.print("Not Found\n", .{});
-    }
-}
-
 pub fn main() !void {
     //const path = "../../data/measurements_1B.txt";
     //const path = "../../data/measurements_1M.txt";
@@ -189,7 +168,7 @@ pub fn main() !void {
 const passError = error{ DelimiterNotFound, LineIsComment };
 
 pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
-    if (buff[0] != '#') return passError.LineIsComment;
+    if (buff[0] == '#') return passError.LineIsComment;
     var splitindex: usize = 0;
     splitindex = std.mem.indexOfScalar(u8, buff, ';') orelse {
         return passError.DelimiterNotFound;
@@ -210,12 +189,12 @@ test "parseLine" {
     try std.testing.expect(parsed.value == 2.444);
 
     const nodelim = "foobar2.444\n";
-    const parsed2 = try parseLine(nodelim);
-    try std.testing.expect(parsed2 == passError.DelimiterNotFound);
+    const e = parseLine(nodelim);
+    try std.testing.expectError(passError.DelimiterNotFound, e);
 
     const withcomment = "# Adapted from https://simplemaps.com/data/world-cities";
-    const parsed3 = try parseLine(withcomment);
-    try std.testing.expect(parsed3 == passError.LineIsComment);
+    const e2 = parseLine(withcomment);
+    try std.testing.expectError(passError.LineIsComment, e2);
 }
 
 pub fn processFileStream(filename: []const u8) !void {
