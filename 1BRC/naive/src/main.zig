@@ -102,6 +102,11 @@ const Stations = struct {
         return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
     }
 
+    pub fn GetStation(self: *Stations, name: []const u8) StationAgregate {
+        const result = self.stations.get(name);
+        return result.?;
+    }
+
     pub fn PrintSpecific(self: *Stations, name: []const u8) !void {
         const out = std.io.getStdOut().writer();
 
@@ -156,7 +161,11 @@ test "hashmap stations" {
     try stats.Store("foo", 32);
     try stats.Store("foo", 10);
     try stats.Store("bar", 15);
-    // TODO confirm two entries and value
+
+    try std.testing.expect(stats.resultcount == 3);
+
+    const foo = stats.GetStation("foo");
+    try std.testing.expect(foo.averageTemperature() == 21.0);
 }
 
 const passError = error{ DelimiterNotFound, LineIsComment };
@@ -174,9 +183,6 @@ pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
 }
 
 test "parseLine" {
-    //# Adapted from https://simplemaps.com/data/world-cities
-    //# Licensed under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/)
-
     const line = "foobar;2.444";
     const parsed = try parseLine(line);
     try std.testing.expect(std.mem.eql(u8, parsed.name, "foobar"));
@@ -222,7 +228,7 @@ test "getStatsFromFileStream" {
     const allocator = std.testing.allocator;
     const path = "../../data/weather_stations.csv";
     var stats = try getStatsFromFileStream(allocator, path);
-    stats.deinit();
+    defer stats.deinit();
 }
 
 pub fn main() !void {
