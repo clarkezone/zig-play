@@ -63,6 +63,7 @@ test "StationAgregate" {
 const Stations = struct {
     ally: std.mem.Allocator,
     stations: std.StringArrayHashMap(StationAgregate),
+    resultcount: u64,
 
     //TODO error return causes deinit not to be found
     pub fn init(ally: std.mem.Allocator) Stations {
@@ -71,8 +72,8 @@ const Stations = struct {
         tracker.ensureTotalCapacity(10000) catch {
             unreachable;
         };
-        const st = Stations{ .ally = ally, .stations = tracker };
-        return st;
+        const stat = Stations{ .ally = ally, .stations = tracker, .resultcount = 0 };
+        return stat;
     }
 
     pub fn deinit(self: *Stations) void {
@@ -90,10 +91,11 @@ const Stations = struct {
             thing.key_ptr.* = thing.value_ptr.*.name;
         }
         thing.value_ptr.*.recordTemperature(temp);
+        self.resultcount += 1;
     }
 
     pub fn PrintSummary(self: *Stations) void {
-        std.debug.print("Storagecount {}\n", .{self.stations.count()});
+        std.debug.print("Rowscancount{} Storagecount {}\n", .{ self.resultcount, self.stations.count() });
     }
 
     fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
@@ -120,7 +122,7 @@ const Stations = struct {
         }
     }
 
-    pub fn PrintAll(self: *Stations) !void {
+    pub fn PrintAll(self: *const Stations) !void {
         const out = std.io.getStdOut().writer();
         //var it = self.stations.iterator();
         const stationlist = std.ArrayList([]const u8);
@@ -157,14 +159,6 @@ test "hashmap stations" {
     // TODO confirm two entries and value
 }
 
-pub fn main() !void {
-    //const path = "../../data/measurements_1B.txt";
-    //const path = "../../data/measurements_1M.txt";
-    //const path = "../../data/measurements_5k.txt";
-    const path = "measurements_official.txt";
-    try processFileStream(path);
-}
-
 const passError = error{ DelimiterNotFound, LineIsComment };
 
 pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
@@ -197,14 +191,9 @@ test "parseLine" {
     try std.testing.expectError(passError.LineIsComment, e2);
 }
 
-pub fn processFileStream(filename: []const u8) !void {
-    var timer = try std.time.Timer.start();
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
+/// Read the file and process the data.  Caller owns stations returned and must call deinit()
+pub fn getStatsFromFileStream(allocator: std.mem.Allocator, filename: []const u8) !Stations {
     var stats = Stations.init(allocator);
-    defer stats.deinit();
 
     const sourceFile = try std.fs.cwd().openFile(filename, .{});
     defer sourceFile.close();
@@ -212,12 +201,10 @@ pub fn processFileStream(filename: []const u8) !void {
     var buf4: [1024]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buf4);
 
-    var rowcount: u64 = 0;
     while (true) {
         stream.reset();
         reader.streamUntilDelimiter(stream.writer(), '\n', null) catch break;
         const buf = stream.getWritten();
-        rowcount += 1;
         if (parseLine(buf)) |vals| {
             try stats.Store(vals.name, vals.value);
         } else |err| {
@@ -228,13 +215,31 @@ pub fn processFileStream(filename: []const u8) !void {
             }
         }
     }
-    const elapsed: f32 = @floatFromInt(timer.read());
-    const elapsedSecs = elapsed / 1e9;
+    return stats;
+}
 
-    //    const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
+test "getStatsFromFileStream" {
+    const allocator = std.testing.allocator;
+    const path = "../../data/weather_stations.csv";
+    var stats = try getStatsFromFileStream(allocator, path);
+    stats.deinit();
+}
+
+pub fn main() !void {
+    //const path = "../../data/measurements_1B.txt";
+    //const path = "../../data/measurements_1M.txt";
+    //const path = "../../data/measurements_5k.txt";
+    const path = "measurements_official.txt";
+    var timer = try std.time.Timer.start();
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    var stats = try getStatsFromFileStream(allocator, path);
+    const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
 
     try stats.PrintAll();
     //    try stats.PrintSpecific("Farkhâna");
-    std.debug.print("{} rows scanned from file in {d:.3} secs.\n", .{ rowcount, elapsedSecs });
+    std.debug.print("{} rows scanned from file in {d:.3} secs.\n", .{ stats.resultcount, elapsedSecs });
     std.debug.print("done\n", .{});
+    stats.deinit();
 }
