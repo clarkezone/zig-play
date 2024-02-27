@@ -27,7 +27,9 @@ const StationAgregate = struct {
         if (self.valuecount == 0) {
             return 0.0;
         }
-        return self.temperaturetotal / @as(f32, @floatFromInt(self.valuecount));
+        // if denominator is f32, rounding is broken
+        return self.temperaturetotal / @as(f64, @floatFromInt(self.valuecount));
+        //return try std.math.divCeil(f64, self.temperaturetotal, @as(f64, @floatFromInt(self.valuecount)));
     }
 
     pub fn recordTemperature(self: *StationAgregate, value: f64) void {
@@ -98,6 +100,26 @@ const Stations = struct {
         return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
     }
 
+    pub fn PrintSpecific(self: *Stations, name: []const u8) !void {
+        const out = std.io.getStdOut().writer();
+
+        const result = self.stations.get(name);
+        if (result) |ri| {
+            try out.print("{s}={d}/{d}/{d}\n", .{
+                ri.name,
+                ri.temperaturemin,
+                ri.averageTemperature(),
+                ri.temperaturemax,
+            });
+            try out.print("{s}={d:.1}/{s}/{d:.1}\n", .{
+                ri.name,
+                ri.temperaturemin,
+                ri.averageTemperature(),
+                ri.temperaturemax,
+            });
+        }
+    }
+
     pub fn PrintAll(self: *Stations) !void {
         const out = std.io.getStdOut().writer();
         //var it = self.stations.iterator();
@@ -159,28 +181,19 @@ test "hashmap stationagregate" {
 pub fn main() !void {
     //const path = "../../data/measurements_1B.txt";
     //const path = "../../data/measurements_1M.txt";
-    const path = "../../data/measurements_5k.txt";
-    try printallstream(path);
+    //const path = "../../data/measurements_5k.txt";
+    const path = "measurements_official.txt";
+    try processFileStream(path);
 }
 
-pub fn printall(filename: []const u8) !void {
-    const sourceFile = try std.fs.cwd().openFile(filename, .{});
-    defer sourceFile.close();
-    const reader = std.fs.File.reader(sourceFile);
-    var buf: [1024]u8 = undefined;
-    while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        std.debug.print("Hello {s}\n", .{line});
-    }
-}
+const passError = error{ DelimiterNotFound, LineIsComment };
 
 pub fn parseLine(buff: []const u8) !struct { name: []const u8, value: f32 } {
+    if (buff[0] != '#') return passError.LineIsComment;
     var splitindex: usize = 0;
-    for (buff, 0..) |b, i| {
-        if (b == ';') {
-            splitindex = i;
-            break;
-        }
-    }
+    splitindex = std.mem.indexOfScalar(u8, buff, ';') orelse {
+        return passError.DelimiterNotFound;
+    };
     const stationName = buff[0..splitindex];
     const tempStr = buff[splitindex + 1 ..];
     const temp = try std.fmt.parseFloat(f32, tempStr);
@@ -195,15 +208,17 @@ test "parseLine" {
     const parsed = try parseLine(line);
     try std.testing.expect(std.mem.eql(u8, parsed.name, "foobar"));
     try std.testing.expect(parsed.value == 2.444);
+
+    const nodelim = "foobar2.444\n";
+    const parsed2 = try parseLine(nodelim);
+    try std.testing.expect(parsed2 == passError.DelimiterNotFound);
+
+    const withcomment = "# Adapted from https://simplemaps.com/data/world-cities";
+    const parsed3 = try parseLine(withcomment);
+    try std.testing.expect(parsed3 == passError.LineIsComment);
 }
 
-pub fn printallstream(filename: []const u8) !void {
-    //@memset(&buf, 0);
-    //var buf2: [1024]u8 = std.mem.zeroes([1024]u8);
-    //_ = buf2;
-    //var buf3: [1024]u8 = [1]u8{0} ** 1024;
-    //_ = buf3;
-    //
+pub fn processFileStream(filename: []const u8) !void {
     var timer = try std.time.Timer.start();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -216,40 +231,31 @@ pub fn printallstream(filename: []const u8) !void {
     defer sourceFile.close();
     const reader = std.fs.File.reader(sourceFile);
     var buf4: [1024]u8 = undefined;
-    var strem = std.io.fixedBufferStream(&buf4);
+    var stream = std.io.fixedBufferStream(&buf4);
 
     var rowcount: u64 = 0;
     while (true) {
-        strem.reset();
-        reader.streamUntilDelimiter(strem.writer(), '\n', null) catch break;
-        const buf = strem.getWritten();
-        if (buf[0] != '#') {
-            rowcount += 1;
-            const vals = parseLine(buf) catch |e| {
-                std.debug.print("Parse Error with input: {s}, {}", .{ buf, e });
-                return;
-            };
-            //std.debug.print("name: {s}, value: {}\n", .{ vals.name, vals.value });
+        stream.reset();
+        reader.streamUntilDelimiter(stream.writer(), '\n', null) catch break;
+        const buf = stream.getWritten();
+        rowcount += 1;
+        if (parseLine(buf)) |vals| {
             try stats.Store(vals.name, vals.value);
+        } else |err| {
+            if (err == passError.LineIsComment) {
+                continue;
+            } else {
+                return err;
+            }
         }
     }
     const elapsed: f32 = @floatFromInt(timer.read());
     const elapsedSecs = elapsed / 1e9;
 
+    //    const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
+
     try stats.PrintAll();
+    //    try stats.PrintSpecific("Farkhâna");
     std.debug.print("{} rows scanned from file in {d:.3} secs.\n", .{ rowcount, elapsedSecs });
     std.debug.print("done\n", .{});
-
-    ////    const input_string = "some_string_with_delimiter!";
-    ////    var input_fbs = std.io.fixedbufferstream(input_string);
-    ////    const reader = input_fbs.reader();
-    ////
-    ////    var output: [input_string.len]u8 = undefined;
-    ////    var output_fbs = std.io.fixedbufferstream(&output);
-    ////    const writer = output_fbs.writer();
-    ////
-    ////    try reader.streamuntildelimiter(writer, '!', input_fbs.buffer.len);
-    ////    try std.testing.expectequalstrings("some_string_with_delimiter", output_fbs.getwritten());
-    ////    try std.testing.expecterror(error.endofstream, reader.streamuntildelimiter(writer, '!', input_fbs.buffer.len));
-
 }
