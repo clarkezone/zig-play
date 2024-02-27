@@ -110,7 +110,7 @@ const Stations = struct {
     pub fn PrintSpecific(self: *Stations, name: []const u8) !void {
         const out = std.io.getStdOut().writer();
 
-        const result = self.stations.get(name);
+        const result = self.GetStation(name);
         if (result) |ri| {
             try out.print("{s}={d}/{d}/{d}\n", .{
                 ri.name,
