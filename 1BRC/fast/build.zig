@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    _ = b.option(bool, "bench", "Run test with hyperfine") orelse false;
+
     const lib = b.addStaticLibrary(.{
         .name = "fast",
         // In this case the main source file is merely a path, however, in more

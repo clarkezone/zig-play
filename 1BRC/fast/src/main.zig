@@ -19,10 +19,15 @@ fn scanfilesegment(state: *scanstate) void {
         std.debug.print("Error: {}\n", .{err});
         return;
     };
+    //TODO 10. Add full weather impl from naive, profile
     //TODO 9. use n threads
     //TODO 8. find mindpoint that is newline boundary
     //TODO 7. look at tokenizer and handle newline + ;
-    //TODO 6. add bench command to build.zig using hyperfine
+    //TODO 6. bench with hyperfine script:
+    //  1) ensure 1B exists or gen with python
+    //  2) build with -OReleaseFast
+    //  3) run with hyperfine:
+    //    hyperfine --warmup=3 --show-output --command-name="./fast/zig-out/bin/fast ./data/measurements_1B.txt" "./fast/zig-out/bin/fast ./data/measurements_1B.txt"
     //TODO 5. use argument for filepath and add a hyperfine test [x]
     //TODO 4. pass results back and add on main thread, ensure adds up to 1B [x]
     //TODO 3. use two fixed threads [x]
