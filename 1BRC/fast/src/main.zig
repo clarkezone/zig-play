@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const scanstate = struct {
+    startFromFirstnewline: bool,
     start: u64,
     end: u64,
     length: u64,
@@ -43,15 +44,15 @@ fn scanfilesegment(state: *scanstate) void {
     state.*.waitgroup.finish();
 }
 
-pub fn scanfile() !void {
+pub fn scanfile(filename: []const u8) !void {
     //TODO 6 add flags to switch modes
-    const fileh = try std.fs.cwd().openFile("../../data/measurements_1B.txt", .{});
+    const fileh = try std.fs.cwd().openFile(filename, .{});
     defer fileh.close();
     var waitgroup = std.Thread.WaitGroup{};
 
     const filelen = try fileh.getEndPos();
-    var ss: scanstate = .{ .start = 0, .end = filelen / 2, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
-    var ss2: scanstate = .{ .start = filelen / 2, .end = filelen, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
+    var ss: scanstate = .{ .startFromFirstnewline = false, .start = 0, .end = filelen / 2, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
+    var ss2: scanstate = .{ .startFromFirstnewline = false, .start = filelen / 2, .end = filelen, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
 
     var timer = try std.time.Timer.start();
     const th = try std.Thread.spawn(.{}, scanfilesegment, .{&ss});
@@ -66,9 +67,26 @@ pub fn scanfile() !void {
     std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ ss.linecount + ss2.linecount, elapsedSecs });
 }
 
+pub fn getargs(ally: std.mem.Allocator) ![]const u8 {
+    const args = try std.process.argsAlloc(ally);
+    defer ally.free(args);
+    if (args.len < 2) {
+        try std.fmt.format(std.io.getStdErr().writer(), "Usage: {s} <argument>\n", .{"speedoflight"});
+        std.os.exit(1);
+    }
+    var filename = try ally.alloc(u8, args[1].len);
+    @memcpy(filename, args[1]);
+    return filename;
+}
+
 pub fn main() !void {
-    std.debug.print("Speed of light test running..\n", .{});
-    try scanfile();
+    var buffer: [1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
+    const filename = try getargs(allocator);
+    defer allocator.free(filename);
+    std.debug.print("Speed of light test running against {s}..\n", .{filename});
+    try scanfile(filename);
 }
 
 //TODO 5. add tests to ensure simple map case works
