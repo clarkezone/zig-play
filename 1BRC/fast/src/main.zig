@@ -19,10 +19,11 @@ fn scanfilesegment(state: *scanstate) void {
         std.debug.print("Error: {}\n", .{err});
         return;
     };
-    //TODO 8. use n threads
-    //TODO 7. find mindpoint that is newline boundary
-    //TODO 6. look at tokenizer and handle newline + ;
-    //TODO 5. use argument for filepath and add a hyperfine test
+    //TODO 9. use n threads
+    //TODO 8. find mindpoint that is newline boundary
+    //TODO 7. look at tokenizer and handle newline + ;
+    //TODO 6. add bench command to build.zig using hyperfine
+    //TODO 5. use argument for filepath and add a hyperfine test [x]
     //TODO 4. pass results back and add on main thread, ensure adds up to 1B [x]
     //TODO 3. use two fixed threads [x]
     //TODO 2. loop and count all newlines [x]
