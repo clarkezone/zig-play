@@ -73,6 +73,50 @@ pub fn scanfile(filename: []const u8) !void {
     std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ ss.linecount + ss2.linecount, elapsedSecs });
 }
 
+pub fn scanfile2(filename: []const u8, cpucount: usize, ally: std.mem.Allocator) !void {
+    const fileh = try std.fs.cwd().openFile(filename, .{});
+    defer fileh.close();
+    var waitgroup = std.Thread.WaitGroup{};
+    var threadconfigs: std.ArrayList(scanstate) = std.ArrayList(scanstate).init(ally);
+    defer threadconfigs.deinit();
+    const filelen = try fileh.getEndPos();
+    try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
+    for (threadconfigs.items) |*ss| {
+        std.debug.print("Thread start: {} end: {}\n", .{ ss.start, ss.end });
+    }
+    //TODO start threads and wait for them all
+}
+
+pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *std.ArrayList(scanstate), wg: *std.Thread.WaitGroup, fileh: std.fs.File) !void {
+    const scanbytesperfor = filelen / cpucount;
+    var nextStart: u64 = 0;
+    var nextEnd: u64 = scanbytesperfor;
+    for (0..cpucount) |i| {
+        std.debug.print("CPU: {}\n", .{i});
+        var ss: scanstate = .{ .startFromFirstnewline = false, .start = nextStart, .end = nextEnd, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = wg };
+        //TODO calc nextStart and nextEnd
+        try threadconfigs.append(ss);
+    }
+}
+
+test "populateThreadConfigs" {
+    //TODO replace all references to the 1B item with something checked in
+    const filename = "../../data/measurements_1B.txt";
+    const fileh = try std.fs.cwd().openFile(filename, .{});
+    defer fileh.close();
+    const filelen = try fileh.getEndPos();
+    const ally = std.testing.allocator;
+    var waitgroup = std.Thread.WaitGroup{};
+    var threadconfigs: std.ArrayList(scanstate) = std.ArrayList(scanstate).init(ally);
+    defer threadconfigs.deinit();
+    //const cpucount = try std.Thread.getCpuCount();
+    const cpucount = 1;
+    try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
+    try std.testing.expectEqual(threadconfigs.items.len, 1);
+
+    //TODO verify computations for known filesize in each config
+}
+
 pub fn getargs(ally: std.mem.Allocator) ![]const u8 {
     const args = try std.process.argsAlloc(ally);
     defer ally.free(args);
