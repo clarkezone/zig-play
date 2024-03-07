@@ -81,11 +81,20 @@ pub fn scanfile2(filename: []const u8, cpucount: usize, ally: std.mem.Allocator)
     defer threadconfigs.deinit();
     const filelen = try fileh.getEndPos();
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
+    var timer = try std.time.Timer.start();
     for (threadconfigs.items) |*ss| {
         std.debug.print("Thread start: {} end: {}\n", .{ ss.start, ss.end });
+        _ = try std.Thread.spawn(.{}, scanfilesegment, .{ss});
+        waitgroup.start();
     }
-    //TODO start threads and wait for them all
+    waitgroup.wait();
+    const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
+    std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ 0, elapsedSecs });
+    //TODO store threads and join them.
+    //TODO make config immutable and output state, thread handle part of a stored mutable struct
 }
+
+//TODO make it compile on 0.12 tree
 
 pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *std.ArrayList(scanstate), wg: *std.Thread.WaitGroup, fileh: std.fs.File) !void {
     const scanbytesperfor = filelen / cpucount;
@@ -94,7 +103,8 @@ pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *st
     for (0..cpucount) |i| {
         std.debug.print("CPU: {}\n", .{i});
         var ss: scanstate = .{ .startFromFirstnewline = false, .start = nextStart, .end = nextEnd, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = wg };
-        //TODO calc nextStart and nextEnd
+        nextStart = nextEnd;
+        nextEnd += scanbytesperfor;
         try threadconfigs.append(ss);
     }
 }
@@ -110,11 +120,22 @@ test "populateThreadConfigs" {
     var threadconfigs: std.ArrayList(scanstate) = std.ArrayList(scanstate).init(ally);
     defer threadconfigs.deinit();
     //const cpucount = try std.Thread.getCpuCount();
-    const cpucount = 1;
+    var cpucount: u8 = 1;
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
     try std.testing.expectEqual(threadconfigs.items.len, 1);
+    threadconfigs.clearAndFree();
 
-    //TODO verify computations for known filesize in each config
+    cpucount = 2;
+    try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
+    try std.testing.expectEqual(threadconfigs.items.len, 2);
+    threadconfigs.clearAndFree();
+
+    cpucount = 3;
+    try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
+    const sliced = threadconfigs.items[0..3];
+    try std.testing.expectEqual(sliced.len, 2);
+
+    //TODO verify computations for known filesize in each config, ensure every byte is covered
 }
 
 pub fn getargs(ally: std.mem.Allocator) ![]const u8 {
@@ -130,13 +151,15 @@ pub fn getargs(ally: std.mem.Allocator) ![]const u8 {
 }
 
 pub fn main() !void {
-    var buffer: [1024]u8 = undefined;
+    var buffer: [1024 * 1000]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const allocator = fba.allocator();
     const filename = try getargs(allocator);
     defer allocator.free(filename);
     std.debug.print("Speed of light test running against {s}..\n", .{filename});
-    try scanfile(filename);
+    //try scanfile(filename);
+    const cpucount = try std.Thread.getCpuCount();
+    try scanfile2(filename, cpucount, allocator);
 }
 
 //TODO 5. add tests to ensure simple map case works
