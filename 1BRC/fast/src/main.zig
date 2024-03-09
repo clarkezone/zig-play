@@ -9,29 +9,7 @@ const scanconfig = struct {
     waitgroup: *std.Thread.WaitGroup,
 };
 
-fn scanfilesegment(state: *scanconfig) void {
-    std.debug.print("Thread start: {} end: {}\n", .{ state.start, state.end });
-    //TODO std.os.MAP.SHARED not working in 0.12
-    //TODO can we map portions of the file to save memory?
-    //const mapper = std.os.mmap(null, state.*.end, std.os.PROT.READ, std.os.MAP.SHARED, state.*.file.handle, state.*.start) catch |err| {
-    const mapper = std.os.mmap(null, state.*.length, std.os.PROT.READ, std.os.MAP.SHARED, state.*.file.handle, 0) catch |err| {
-        std.debug.print("Error: {}\n", .{err});
-        return;
-    };
-    //TODO 10. Add full weather impl from naive, profile
-    //TODO 9. use n threads [x]
-    //TODO 8. find mindpoint that is newline boundary [x]
-    //TODO 7. look at tokenizer handle newline + ;
-    //TODO 6. bench with hyperfine script: [x]
-    //  1) ensure 1B exists or gen with python
-    //  2) build with -OReleaseFast
-    //  3) run with hyperfine:
-    //    hyperfine --warmup=3 --show-output --command-name="./fast/zig-out/bin/fast ./data/measurements_1B.txt" "./fast/zig-out/bin/fast ./data/measurements_1B.txt"
-    //TODO 5. use argument for filepath and add a hyperfine test [x]
-    //TODO 4. pass results back and add on main thread, ensure adds up to 1B [x]
-    //TODO 3. use two fixed threads [x]
-    //TODO 2. loop and count all newlines [x]
-    //TODO 2.5 add timer [x]
+fn dobaslineoperation(mapper: []u8, state: *scanconfig) void {
     if (state.start != 0) {
         //attempt fast forward.
         var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
@@ -51,35 +29,24 @@ fn scanfilesegment(state: *scanconfig) void {
             break;
         }
     }
+}
+
+fn scanfilesegment(state: *scanconfig) void {
+    std.debug.print("Thread start: {} end: {}\n", .{ state.start, state.end });
+    //TODO std.os.MAP.SHARED not working in 0.12
+    //TODO can we map portions of the file to save memory?
+    //const mapper = std.os.mmap(null, state.*.end, std.os.PROT.READ, std.os.MAP.SHARED, state.*.file.handle, state.*.start) catch |err| {
+    const mapper = std.os.mmap(null, state.*.length, std.os.PROT.READ, std.os.MAP.SHARED, state.*.file.handle, 0) catch |err| {
+        std.debug.print("Error: {}\n", .{err});
+        return;
+    };
+    dobaslineoperation(mapper, state);
     defer std.os.munmap(mapper);
     std.debug.print("Thread Stop with linecount {}\n", .{state.linecount});
     state.*.waitgroup.finish();
 }
 
-pub fn scanfile(filename: []const u8) !void {
-    //TODO 6 add flags to switch modes
-    const fileh = try std.fs.cwd().openFile(filename, .{});
-    defer fileh.close();
-    var waitgroup = std.Thread.WaitGroup{};
-
-    const filelen = try fileh.getEndPos();
-    var ss: scanconfig = .{ .start = 0, .end = filelen / 2, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
-    var ss2: scanconfig = .{ .start = filelen / 2, .end = filelen, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
-
-    var timer = try std.time.Timer.start();
-    const th = try std.Thread.spawn(.{}, scanfilesegment, .{&ss});
-    const th2 = try std.Thread.spawn(.{}, scanfilesegment, .{&ss2});
-    defer th.join();
-    defer th2.join();
-    waitgroup.start(); //BUG if thread doesn't start due to join immediately due to error
-    waitgroup.start();
-    waitgroup.wait();
-
-    const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
-    std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ ss.linecount + ss2.linecount, elapsedSecs });
-}
-
-pub fn scanfile2(filename: []const u8, cpucount: usize, ally: std.mem.Allocator) !void {
+pub fn scanfile(filename: []const u8, cpucount: usize, ally: std.mem.Allocator) !void {
     const fileh = try std.fs.cwd().openFile(filename, .{});
     defer fileh.close();
     var waitgroup = std.Thread.WaitGroup{};
@@ -89,8 +56,9 @@ pub fn scanfile2(filename: []const u8, cpucount: usize, ally: std.mem.Allocator)
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
     var timer = try std.time.Timer.start();
     for (threadconfigs.items) |*ss| {
-        const tr = try std.Thread.spawn(.{}, scanfilesegment, .{ss});
-        defer tr.join();
+        _ = try std.Thread.spawn(.{}, scanfilesegment, .{ss});
+        //TODO fix this
+        //defer tr.join();
         waitgroup.start();
     }
     waitgroup.wait();
@@ -168,7 +136,7 @@ pub fn main() !void {
     std.debug.print("Speed of light test running against {s}..\n", .{filename});
     //try scanfile(filename);
     const cpucount = try std.Thread.getCpuCount();
-    try scanfile2(filename, cpucount, allocator);
+    try scanfile(filename, cpucount, allocator);
 }
 
 //TODO 5. add tests to ensure simple map case works
