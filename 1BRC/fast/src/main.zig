@@ -1,16 +1,15 @@
 const std = @import("std");
 
-const scanstate = struct {
-    startFromFirstnewline: bool,
+const scanconfig = struct {
     start: u64,
     end: u64,
     length: u64,
-    linecount: u64, //out
+    linecount: u64,
     file: std.fs.File,
     waitgroup: *std.Thread.WaitGroup,
 };
 
-fn scanfilesegment(state: *scanstate) void {
+fn scanfilesegment(state: *scanconfig) void {
     std.debug.print("Thread start: {} end: {}\n", .{ state.start, state.end });
     //TODO std.os.MAP.SHARED not working in 0.12
     //TODO can we map portions of the file to save memory?
@@ -20,10 +19,10 @@ fn scanfilesegment(state: *scanstate) void {
         return;
     };
     //TODO 10. Add full weather impl from naive, profile
-    //TODO 9. use n threads
-    //TODO 8. find mindpoint that is newline boundary
-    //TODO 7. look at tokenizer and handle newline + ;
-    //TODO 6. bench with hyperfine script:
+    //TODO 9. use n threads [x]
+    //TODO 8. find mindpoint that is newline boundary [x]
+    //TODO 7. look at tokenizer handle newline + ;
+    //TODO 6. bench with hyperfine script: [x]
     //  1) ensure 1B exists or gen with python
     //  2) build with -OReleaseFast
     //  3) run with hyperfine:
@@ -33,20 +32,31 @@ fn scanfilesegment(state: *scanstate) void {
     //TODO 3. use two fixed threads [x]
     //TODO 2. loop and count all newlines [x]
     //TODO 2.5 add timer [x]
-    var totallines: u64 = 0;
-    var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
-    while (returnpos) |pos| {
-        if (pos < state.end) {
-            totallines += 1;
-            returnpos = std.mem.indexOfScalarPos(u8, mapper, pos + 1, '\n');
+    if (state.start != 0) {
+        //attempt fast forward.
+        var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
+        if (returnpos) |pos| {
+            // don't count the first line
+            state.start = pos + 1; // always increment start to ensure loop not entered if first seek takes out of bounds
         } else {
-            std.debug.print("Breaking at: {}\n", .{pos});
+            unreachable;
+        }
+    }
+    while (state.start < state.end) {
+        //TODO : ensure we don't overshoot the end
+        var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
+        if (returnpos) |pos| {
+            if (pos <= state.end) {
+                state.linecount += 1;
+            }
+            // always increment start to ensure loop is exited
+            state.start = pos + 1;
+        } else {
             break;
         }
     }
     defer std.os.munmap(mapper);
-    state.*.linecount = totallines;
-    std.debug.print("Thread Stop with linecount {}\n", .{totallines});
+    std.debug.print("Thread Stop with linecount {}\n", .{state.linecount});
     state.*.waitgroup.finish();
 }
 
@@ -57,8 +67,8 @@ pub fn scanfile(filename: []const u8) !void {
     var waitgroup = std.Thread.WaitGroup{};
 
     const filelen = try fileh.getEndPos();
-    var ss: scanstate = .{ .startFromFirstnewline = false, .start = 0, .end = filelen / 2, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
-    var ss2: scanstate = .{ .startFromFirstnewline = false, .start = filelen / 2, .end = filelen, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
+    var ss: scanconfig = .{ .start = 0, .end = filelen / 2, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
+    var ss2: scanconfig = .{ .start = filelen / 2, .end = filelen, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = &waitgroup };
 
     var timer = try std.time.Timer.start();
     const th = try std.Thread.spawn(.{}, scanfilesegment, .{&ss});
@@ -77,32 +87,35 @@ pub fn scanfile2(filename: []const u8, cpucount: usize, ally: std.mem.Allocator)
     const fileh = try std.fs.cwd().openFile(filename, .{});
     defer fileh.close();
     var waitgroup = std.Thread.WaitGroup{};
-    var threadconfigs: std.ArrayList(scanstate) = std.ArrayList(scanstate).init(ally);
+    var threadconfigs: std.ArrayList(scanconfig) = std.ArrayList(scanconfig).init(ally);
     defer threadconfigs.deinit();
     const filelen = try fileh.getEndPos();
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
     var timer = try std.time.Timer.start();
     for (threadconfigs.items) |*ss| {
-        std.debug.print("Thread start: {} end: {}\n", .{ ss.start, ss.end });
-        _ = try std.Thread.spawn(.{}, scanfilesegment, .{ss});
+        const tr = try std.Thread.spawn(.{}, scanfilesegment, .{ss});
+        defer tr.join();
         waitgroup.start();
     }
     waitgroup.wait();
+    var totallines: u64 = 0;
+    for (threadconfigs.items) |*ss| {
+        totallines += ss.linecount;
+    }
     const elapsedSecs = @as(f32, @floatFromInt(timer.read())) / 1e9;
-    std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ 0, elapsedSecs });
-    //TODO store threads and join them.
-    //TODO make config immutable and output state, thread handle part of a stored mutable struct
+    std.debug.print("\nFound: {} lines in {d:5} seconds\n", .{ totallines, elapsedSecs });
+    //TODO ?make config immutable and output state, thread handle part of a stored mutable struct
 }
 
 //TODO make it compile on 0.12 tree
 
-pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *std.ArrayList(scanstate), wg: *std.Thread.WaitGroup, fileh: std.fs.File) !void {
+pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *std.ArrayList(scanconfig), wg: *std.Thread.WaitGroup, fileh: std.fs.File) !void {
     const scanbytesperfor = filelen / cpucount;
     var nextStart: u64 = 0;
     var nextEnd: u64 = scanbytesperfor;
     for (0..cpucount) |i| {
         std.debug.print("CPU: {}\n", .{i});
-        var ss: scanstate = .{ .startFromFirstnewline = false, .start = nextStart, .end = nextEnd, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = wg };
+        var ss: scanconfig = .{ .start = nextStart, .end = nextEnd, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = wg };
         nextStart = nextEnd;
         nextEnd += scanbytesperfor;
         try threadconfigs.append(ss);
@@ -111,29 +124,29 @@ pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *st
 
 test "populateThreadConfigs" {
     //TODO replace all references to the 1B item with something checked in
-    const filename = "../../data/measurements_1B.txt";
+    const filename = "../../data/weather_stations.csv";
     const fileh = try std.fs.cwd().openFile(filename, .{});
     defer fileh.close();
     const filelen = try fileh.getEndPos();
     const ally = std.testing.allocator;
     var waitgroup = std.Thread.WaitGroup{};
-    var threadconfigs: std.ArrayList(scanstate) = std.ArrayList(scanstate).init(ally);
+    var threadconfigs: std.ArrayList(scanconfig) = std.ArrayList(scanconfig).init(ally);
     defer threadconfigs.deinit();
     //const cpucount = try std.Thread.getCpuCount();
     var cpucount: u8 = 1;
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
-    try std.testing.expectEqual(threadconfigs.items.len, 1);
+    try std.testing.expectEqual(@as(usize, 1), threadconfigs.items.len);
     threadconfigs.clearAndFree();
 
     cpucount = 2;
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
-    try std.testing.expectEqual(threadconfigs.items.len, 2);
+    try std.testing.expectEqual(@as(usize, 2), threadconfigs.items.len);
     threadconfigs.clearAndFree();
 
     cpucount = 3;
     try populateThreadConfigs(filelen, cpucount, &threadconfigs, &waitgroup, fileh);
     const sliced = threadconfigs.items[0..3];
-    try std.testing.expectEqual(sliced.len, 2);
+    try std.testing.expectEqual(@as(usize, 3), sliced.len);
 
     //TODO verify computations for known filesize in each config, ensure every byte is covered
 }
