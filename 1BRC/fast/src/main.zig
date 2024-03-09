@@ -37,19 +37,15 @@ fn scanfilesegment(state: *scanconfig) void {
         var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
         if (returnpos) |pos| {
             // don't count the first line
-            state.start = pos; // always increment start to ensure loop not entered if first seek takes out of bounds
+            state.start = pos + 1; // always increment start to ensure loop not entered if first seek takes out of bounds
         } else {
             unreachable;
         }
     }
     while (state.start < state.end) {
-        //TODO : ensure we don't overshoot the end
         var returnpos = std.mem.indexOfScalarPos(u8, mapper, state.start, '\n');
         if (returnpos) |pos| {
-            if (pos <= state.end) {
-                state.linecount += 1;
-            }
-            // always increment start to ensure loop is exited
+            state.linecount += 1;
             state.start = pos + 1;
         } else {
             break;
@@ -116,7 +112,7 @@ pub fn populateThreadConfigs(filelen: usize, cpucount: usize, threadconfigs: *st
     for (0..cpucount) |i| {
         std.debug.print("CPU: {}\n", .{i});
         var ss: scanconfig = .{ .start = nextStart, .end = nextEnd, .length = filelen, .linecount = 0, .file = fileh, .waitgroup = wg };
-        nextStart = nextEnd;
+        nextStart = nextEnd + 1;
         nextEnd += scanbytesperfor - 1;
         try threadconfigs.append(ss);
     }
